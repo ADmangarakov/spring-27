@@ -1,0 +1,57 @@
+name: Dispatch closed Lab 1
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+  schedule:
+    - cron: '13,43 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number to retry. Leave empty to recover expired checks.'
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  dispatch:
+    if: github.repository == 'itmo-mla/spring-27'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        id: course
+        with:
+          app-id: ${{ vars.GRADER_APP_ID }}
+          private-key: ${{ secrets.GRADER_APP_PRIVATE_KEY }}
+          owner: itmo-mla
+          repositories: spring-27
+          permission-checks: write
+          permission-contents: read
+          permission-pull-requests: read
+          permission-actions: read
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        id: private
+        with:
+          app-id: ${{ vars.GRADER_APP_ID }}
+          private-key: ${{ secrets.GRADER_APP_PRIVATE_KEY }}
+          owner: itmo-mla
+          repositories: semester-grader
+          permission-actions: write
+      - name: Dispatch or recover
+        run: python .github/scripts/dispatch.py
+        env:
+          COURSE_TOKEN: ${{ steps.course.outputs.token }}
+          DISPATCH_TOKEN: ${{ steps.private.outputs.token }}
+          GRADER_APP_ID: ${{ vars.GRADER_APP_ID }}
+      - name: Retain check identity for recovery
+        if: always() && hashFiles('dispatch-check.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: lr1-dispatch-${{ github.run_attempt }}
+          path: dispatch-check.json
+          retention-days: 7
